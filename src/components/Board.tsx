@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { rememberList } from "@/components/BackLink";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { rememberList, rememberPlace } from "@/components/BackLink";
 import { addDays, formatDay, monthMatrix, shanghaiStamp } from "@/lib/dates";
 import { ageText, cityLabel, displayTitle, formatText, isClosed, rowFace, sortMark } from "@/lib/present";
 import { AGE_GROUPS, SECTORS, type AgeGroup, type EventFormat, type EventItem, type SourceReport } from "@/lib/types";
@@ -80,6 +80,21 @@ export function Board({
   useEffect(() => {
     rememberList();
   }, [searchParams]);
+
+  useLayoutEffect(() => {
+    const raw = sessionStorage.getItem("sai-scroll");
+    if (raw == null) return;
+    const top = Number(raw);
+    if (!Number.isFinite(top)) return;
+    const restore = () => window.scrollTo(0, top);
+    restore();
+    const timers = [0, 50, 150, 320].map((ms) => window.setTimeout(restore, ms));
+    const clear = window.setTimeout(() => sessionStorage.removeItem("sai-scroll"), 400);
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+      window.clearTimeout(clear);
+    };
+  }, []);
 
   function write(mutate: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
@@ -430,7 +445,7 @@ function EventRow({ event, today, activeSectors }: { event: EventItem; today: st
   const meta = [event.kind, ageText(event.ages), ...sectors].filter(Boolean).join(" · ");
   const where = cityLabel(event);
   return (
-    <Link className="row" href={`/event/${event.id}`} title={event.title} onClick={rememberList}>
+    <Link className="row" href={`/event/${event.id}`} title={event.title} onClick={() => rememberPlace(event.id)}>
       <span className="when">
         <strong className={face.urgent ? "urgent" : undefined}>{formatDay(face.date)}</strong>
         <span className={face.urgent ? "urgent" : undefined}>{face.label}</span>
@@ -525,7 +540,7 @@ function Calendar({
                         href={`/event/${event.id}`}
                         className={rowFace(event, today).urgent ? "pill urgent" : "pill"}
                         title={event.title}
-                        onClick={rememberList}
+                        onClick={() => rememberPlace(event.id)}
                       >
                         {formatText(event.format)} {displayTitle(event.title)}
                       </Link>
