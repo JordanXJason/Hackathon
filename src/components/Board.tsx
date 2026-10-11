@@ -77,7 +77,6 @@ export function Board({
   const ages = readMany(searchParams.get("ages"), AGE_GROUPS, DEFAULT_AGES);
   const sectors: string[] = readMany(searchParams.get("sectors"), SECTORS, []);
   const countryRaw = searchParams.get("country") || "全部";
-  const country = HIDDEN_COUNTRIES.has(countryRaw) ? "全部" : countryRaw;
   const openOnly = searchParams.get("open") === "1";
   const chinaPage = readPage(searchParams.get("cp"));
   const worldPage = readPage(searchParams.get("wp"));
@@ -115,41 +114,56 @@ export function Board({
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
-  const countries = useMemo(() => {
-    const names = new Set<string>();
-    for (const event of events) {
-      if (event.country && event.country !== "线上" && !HIDDEN_COUNTRIES.has(event.country)) names.add(event.country);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b, "zh"));
-  }, [events]);
-
-  const visible = useMemo(() => {
-    const [year, month] = today.split("-").map(Number);
-    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const listed = useMemo(() => {
+    const [year, monthNumber] = today.split("-").map(Number);
+    const monthStart = `${year}-${String(monthNumber).padStart(2, "0")}-01`;
+    const monthEnd = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
     const days = timeRange === "quarter" ? 90 : timeRange === "half" ? 180 : 365;
     const windowStart = timeRange === "month" ? monthStart : today;
     const windowEnd = timeRange === "month" ? monthEnd : addDays(today, days);
-    return events.filter((event) => {
-      const shown = rowFace(event, today).date || "";
-      const finishes = event.end || event.deadline || event.start || "";
-      const inWindow =
-        timeRange === "year"
-          ? (shown >= windowStart && shown <= windowEnd) ||
-            (shown < windowStart && finishes >= windowStart && finishes <= windowEnd)
-          : shown >= windowStart && shown <= windowEnd;
-      if (!inWindow) return false;
-      if (HIDDEN_COUNTRIES.has(event.country)) return false;
-      if (!formats.includes(event.format)) return false;
-      if (!event.ages.some((age) => ages.includes(age))) return false;
-      if (sectors.length && !event.sectors.some((sector) => sectors.includes(sector))) return false;
-      if (country !== "全部" && event.country !== country) return false;
-      if (openOnly && isClosed(event, today)) return false;
-      const end = event.end || event.deadline || event.start;
-      if (end && end < today) return false;
-      return true;
-    }).sort((a, b) => compareVisible(a, b, today));
-  }, [ages, country, events, formats, openOnly, sectors, timeRange, today]);
+    return events
+      .filter((event) => {
+        const shown = rowFace(event, today).date || "";
+        const finishes = event.end || event.deadline || event.start || "";
+        const inWindow =
+          timeRange === "year"
+            ? (shown >= windowStart && shown <= windowEnd) ||
+              (shown < windowStart && finishes >= windowStart && finishes <= windowEnd)
+            : shown >= windowStart && shown <= windowEnd;
+        if (!inWindow) return false;
+        if (HIDDEN_COUNTRIES.has(event.country)) return false;
+        if (!formats.includes(event.format)) return false;
+        if (!event.ages.some((age) => ages.includes(age))) return false;
+        if (sectors.length && !event.sectors.some((sector) => sectors.includes(sector))) return false;
+        if (openOnly && isClosed(event, today)) return false;
+        const end = event.end || event.deadline || event.start;
+        if (end && end < today) return false;
+        return true;
+      })
+      .sort((a, b) => compareVisible(a, b, today));
+  }, [ages, events, formats, openOnly, sectors, timeRange, today]);
+
+  const countries = useMemo(() => {
+    const names = new Set<string>();
+    for (const event of listed) {
+      if (!event.country || event.country === "线上") continue;
+      if (HIDDEN_COUNTRIES.has(event.country)) continue;
+      names.add(event.country);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, "zh"));
+  }, [listed]);
+
+  const country =
+    countryRaw !== "全部" && !HIDDEN_COUNTRIES.has(countryRaw) && countries.includes(countryRaw)
+      ? countryRaw
+      : "全部";
+
+  useEffect(() => {
+    if (countryRaw === "全部" || country === countryRaw) return;
+    write((params) => params.delete("country"));
+  }, [country, countryRaw]);
+
+  const visible = country === "全部" ? listed : listed.filter((event) => event.country === country);
 
   const china = visible.filter((event) => event.region === "china");
   const world = visible.filter((event) => event.region === "international");
