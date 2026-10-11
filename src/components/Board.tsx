@@ -549,7 +549,7 @@ function Calendar({
   onCursor: (next: string) => void;
 }) {
   const [direction, setDirection] = useState<"next" | "prev">("next");
-  const [picked, setPicked] = useState<string | null>(today);
+  const [picked, setPicked] = useState<string | null>(null);
   const [year, month] = cursor.split("-").map(Number);
   const cells = monthMatrix(year, month);
   const byDay = new Map<string, EventItem[]>();
@@ -561,7 +561,9 @@ function Calendar({
       byDay.set(day, list);
     }
   }
-  const pickedEvents = picked ? byDay.get(picked) ?? [] : [];
+  const days = [...byDay.keys()].sort();
+  if (picked && !days.includes(picked)) days.push(picked);
+  days.sort();
 
   function move(step: number) {
     const next = new Date(Date.UTC(year, month - 1 + step, 1));
@@ -569,6 +571,15 @@ function Calendar({
     onCursor(next.toISOString().slice(0, 7));
     setPicked(null);
   }
+
+  function choose(day: string) {
+    setPicked(day);
+  }
+
+  useEffect(() => {
+    if (!picked) return;
+    document.getElementById(`cal-${picked}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [picked]);
 
   return (
     <section className="calendar">
@@ -588,23 +599,36 @@ function Calendar({
           <span key={day}>{day}</span>
         ))}
       </div>
+      <p className="cal-note">日期下的数字是这一天有几场比赛。点某一天，下面的清单会跳到那一天。</p>
       <div key={cursor} className={`grid slide-${direction}`}>
         {cells.map((day, index) => {
           const items = day ? byDay.get(day) ?? [] : [];
           const urgent = items.some((event) => rowFace(event, today).urgent);
           return (
-            <div className="day" key={day ?? `empty-${index}`}>
+            <div
+              className={["day", day && day === picked ? "is-picked" : ""].filter(Boolean).join(" ")}
+              key={day ?? `empty-${index}`}
+              onClick={() => day && choose(day)}
+            >
               {day && (
                 <>
                   <button
                     type="button"
                     className={["num", urgent ? "urgent-num" : "", day === today ? "is-today" : ""].filter(Boolean).join(" ")}
                     aria-current={day === today ? "date" : undefined}
-                    onClick={() => setPicked(day)}
+                    aria-pressed={day === picked}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      choose(day);
+                    }}
                   >
                     {Number(day.slice(8))}
                   </button>
-                  {items.length > 0 ? <span className="day-count">{items.length}场</span> : null}
+                  {items.length > 0 ? (
+                    <span className="day-count" title={`这一天有 ${items.length} 场比赛`}>
+                      {items.length}场
+                    </span>
+                  ) : null}
                   <div className="pills">
                     {items.slice(0, 3).map((event) => (
                       <Link
@@ -612,13 +636,23 @@ function Calendar({
                         href={`/event/${event.id}`}
                         className={rowFace(event, today).urgent ? "pill urgent" : "pill"}
                         title={event.title}
-                        onClick={() => rememberPlace(event.id)}
+                        onClick={(click) => {
+                          click.stopPropagation();
+                          rememberPlace(event.id);
+                        }}
                       >
                         {formatText(event.format)} {displayTitle(event.title)}
                       </Link>
                     ))}
                     {items.length > 3 && (
-                      <button type="button" className="more" onClick={() => setPicked(day)}>
+                      <button
+                        type="button"
+                        className="more"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          choose(day);
+                        }}
+                      >
                         还有 {items.length - 3} 场
                       </button>
                     )}
@@ -629,21 +663,30 @@ function Calendar({
           );
         })}
       </div>
-      {picked && (
-        <div className="day-list">
-          <div className="section-head">
-            <h2>{formatDay(picked)}</h2>
-            <span>{pickedEvents.length} 场</span>
-          </div>
-          {pickedEvents.length === 0 ? (
-            <p className="empty">这一天没有比赛。</p>
-          ) : (
-            pickedEvents.map((event) => (
-              <EventRow key={event.id} event={event} today={today} activeSectors={activeSectors} />
-            ))
-          )}
-        </div>
-      )}
+      <div className="day-list">
+        {days.length === 0 ? (
+          <p className="empty">这个月没有比赛。</p>
+        ) : (
+          days.map((day) => {
+            const items = byDay.get(day) ?? [];
+            return (
+              <div className="day-block" id={`cal-${day}`} key={day}>
+                <div className="section-head">
+                  <h2>{formatDay(day)}</h2>
+                  <span>{items.length} 场</span>
+                </div>
+                {items.length === 0 ? (
+                  <p className="empty">这一天没有比赛。</p>
+                ) : (
+                  items.map((event) => (
+                    <EventRow key={event.id} event={event} today={today} activeSectors={activeSectors} />
+                  ))
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </section>
   );
 }

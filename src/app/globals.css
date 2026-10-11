@@ -403,7 +403,14 @@ a { color: inherit; }
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: transparent;
+  cursor: pointer;
 }
+
+.day.is-picked { background: var(--accent-soft); }
+
+.cal-note { display: none; }
+
+.day-block { scroll-margin-top: 12px; }
 
 .day button.num {
   border: 0;
@@ -569,6 +576,13 @@ a { color: inherit; }
   }
   .titles b, .titles em, .place, .tags { white-space: normal; overflow-wrap: anywhere; }
   .calendar { overflow: hidden; }
+  .cal-note {
+    display: block;
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
   .day { min-height: 58px; min-width: 0; padding: 6px 4px; }
   .pill, .more { display: none; }
   .day-count {
