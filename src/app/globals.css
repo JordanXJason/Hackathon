@@ -46,7 +46,7 @@ a { color: inherit; }
 .mark {
   margin: 0;
   font-family: var(--serif);
-  font-size: clamp(2.6rem, 5vw, 4.25rem);
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
   font-weight: 600;
   line-height: 0.95;
   letter-spacing: -0.03em;
@@ -549,7 +549,7 @@ a { color: inherit; }
 
 @media (max-width: 900px) {
   .page, .detail { width: min(100% - 28px, 1120px); }
-  .mark { font-size: 2.5rem; }
+  .mark { font-size: 1.7rem; }
   .top, .facts { grid-template-columns: 1fr; }
   .actions { flex-wrap: wrap; width: 100%; }
   .view-switch { flex: 1; }

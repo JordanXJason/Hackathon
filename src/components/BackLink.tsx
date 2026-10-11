@@ -44,7 +44,7 @@ export function BackLink() {
         else router.push("/", { scroll: false });
       }}
     >
-      返回赛历
+      返回黑客松大赛赛历
     </a>
   );
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "赛历",
+  title: "黑客松大赛赛历",
   description: "未来一年的黑客松和 AI 比赛，按时间、地区、年龄和线上线下查看。",
 };
 

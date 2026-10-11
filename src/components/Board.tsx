@@ -241,7 +241,7 @@ export function Board({
     <main className="page">
       <header className="top">
         <div>
-          <h1 className="mark">赛历</h1>
+          <h1 className="mark">黑客松大赛赛历</h1>
           <p className="lede">未来一年的黑客松和 AI 比赛。{updatedLabel}</p>
         </div>
         <div className="actions">
