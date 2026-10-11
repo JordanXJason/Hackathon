@@ -20,7 +20,7 @@ export async function refreshAll(onProgress: (message: string) => void): Promise
   );
   const events = drafted.map((event) => ({
     ...event,
-    titleZh: hasChinese(event.title) ? "" : translations.get(event.title) || "",
+    titleZh: translations.get(event.title) || (hasChinese(event.title) ? "" : ""),
   }));
 
   const keptBySource = new Map<string, number>();

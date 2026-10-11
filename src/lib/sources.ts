@@ -1,5 +1,5 @@
 import { inferFormat } from "./classify";
-import { fromUnix, parseEnglishRange } from "./dates";
+import { addDays, fromUnix, parseEnglishRange, todayISO } from "./dates";
 import { fetchJson, fetchText, plainText, stripHtml } from "./http";
 import type { EventDraft, EventFormat, SourceReport } from "./types";
 import countryMap from "./doraCountries.json";
@@ -442,85 +442,158 @@ function modelScopeDraft(item: Record<string, unknown>): EventDraft | null {
   });
 }
 
-export async function pullTianchi(): Promise<SourcePull> {
-  const source = "天池";
+function decodeHtml(value: string): string {
+  return stripHtml(value)
+    .replace(/&#(\d+);/g, (_, digits: string) => String.fromCodePoint(Number(digits)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, digits: string) => String.fromCodePoint(parseInt(digits, 16)));
+}
+
+function zoneDay(iso: string): string | null {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return null;
+  return new Date(time + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function japanCity(place: string): string {
+  const text = place.replace(/〒?\d{3}-?\d{4}/g, " ").replace(/\s+/g, " ").trim();
+  if (!text || /未定|未設定/.test(text)) return "";
+  if (/オンライン|online/i.test(text) && !/[市区県]/.test(text)) return "线上";
+  const hit = text.match(/(北海道|東京都|大阪府|京都府|[\u4e00-\u9fff]{1,4}県)([\u4e00-\u9fff]{1,6}市)?/);
+  if (hit) return `${hit[1]}${hit[2] ?? ""}`;
+  const city = text.match(/[\u4e00-\u9fff]{1,6}市/);
+  if (city) return city[0];
+  return text.slice(0, 12);
+}
+
+export async function pullConnpass(): Promise<SourcePull> {
+  const source = "connpass";
+  const today = todayISO();
+  const horizon = addDays(today, 365);
+  const startFrom = today.replaceAll("-", "/");
+  const startTo = horizon.replaceAll("-", "/");
+  const drafts: EventDraft[] = [];
+  const seen = new Set<string>();
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 20000);
-    const res = await fetch("https://tianchi.aliyun.com/competition/proxy/api/competition/api/race/list", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ pageNum: 1, pageSize: 50, keyword: "", raceType: "" }),
-    });
-    clearTimeout(timer);
-    if (!res.ok) return empty(source, `HTTP ${res.status}`);
-    const data = (await res.json()) as Record<string, unknown>;
-    const list = findList(data);
-    const drafts = list
-      .map((item) => competitionDraft(item, source, "https://tianchi.aliyun.com/competition/"))
-      .filter((item): item is EventDraft => !!item);
-    if (!drafts.length) return empty(source, "接口没有可解析的赛事");
+    for (let page = 1; page <= 5; page += 1) {
+      const url = `https://connpass.com/search/?q=${encodeURIComponent("ハッカソン")}&start_from=${startFrom}&start_to=${startTo}&page=${page}`;
+      const html = await fetchText(url);
+      const blocks = html.split('<div class="event_list vevent">').slice(1);
+      if (!blocks.length) break;
+      for (const block of blocks) {
+        const titleMatch = block.match(/class="event_title"[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>\s*([^<]+)/);
+        if (!titleMatch) continue;
+        const title = decodeHtml(titleMatch[2]);
+        const href = titleMatch[1];
+        if (!/ハッカソン|hackathon/i.test(title)) continue;
+        if (/説明会|後夜祭|応援|勉強会|もくもく|発表会|キックオフ/.test(title)) continue;
+        if (seen.has(href)) continue;
+        seen.add(href);
+        const placeMatch = block.match(/class="event_place location"[^>]*>([\s\S]*?)<\/p>/);
+        const place = placeMatch ? decodeHtml(placeMatch[1]) : "";
+        const start = zoneDay(block.match(/class="dtstart"><span class="value-title" title="([^"]+)"/)?.[1] || "");
+        const end = zoneDay(block.match(/class="dtend"><span class="value-title" title="([^"]+)"/)?.[1] || "");
+        const online = /オンライン|online/i.test(place);
+        const physical = /[市区県]/.test(place);
+        drafts.push(
+          draft({
+            title,
+            start,
+            end,
+            deadline: null,
+            deadlineKind: "unknown",
+            format: online && physical ? "hybrid" : online ? "online" : "offline",
+            city: japanCity(place),
+            country: "日本",
+            organizer: "",
+            prize: "",
+            summary: place ? `地点：${place}` : "",
+            url: href,
+            registrationUrl: href,
+            hint: `${title} ${place}`,
+            source,
+          }),
+        );
+      }
+      if (blocks.length < 20) break;
+    }
     return { source, drafts, upstream: drafts.length };
   } catch (error) {
     return empty(source, error instanceof Error ? error.message : "抓取失败");
   }
 }
 
-function findList(data: unknown): Array<Record<string, unknown>> {
-  if (Array.isArray(data)) return data.filter(isRecord);
-  if (!isRecord(data)) return [];
-  for (const key of ["Data", "data", "results", "list", "races", "Competitions", "competitions"]) {
-    const value = data[key];
-    if (Array.isArray(value)) return value.filter(isRecord);
-    if (isRecord(value)) {
-      const nested = findList(value);
-      if (nested.length) return nested;
-    }
+function eventUsField(block: string, key: string, last = false): string {
+  const pattern = new RegExp(`"${key}":\\{"raw":"((?:\\\\.|[^"\\\\])*)"`, "g");
+  let found = "";
+  for (const match of block.matchAll(pattern)) {
+    found = match[1];
+    if (!last) break;
   }
-  return [];
+  if (!found) return "";
+  try {
+    return JSON.parse(`"${found}"`) as string;
+  } catch {
+    return found;
+  }
+}
+
+export async function pullEventUs(): Promise<SourcePull> {
+  const source = "EventUs";
+  try {
+    const html = await fetchText(`https://event-us.kr/search?query=${encodeURIComponent("해커톤")}`);
+    const parts = html.split('"title":{"raw":"');
+    const drafts: EventDraft[] = [];
+    const seen = new Set<string>();
+    for (let index = 1; index < parts.length; index += 1) {
+      const titleMatch = /^((?:\\.|[^"\\])*)"/.exec(parts[index]);
+      if (!titleMatch) continue;
+      let title = titleMatch[1];
+      try {
+        title = JSON.parse(`"${title}"`) as string;
+      } catch {
+        title = title.replace(/\\"/g, '"');
+      }
+      if (!/해커톤|hackathon/i.test(title)) continue;
+      const after = parts[index].slice(0, 2800);
+      const before = parts[index - 1].slice(-1200);
+      const id = eventUsField(after, "id");
+      const subdomain = eventUsField(before, "subdomain", true);
+      if (!id || !subdomain || seen.has(id)) continue;
+      seen.add(id);
+      const area = eventUsField(before, "area_detail", true);
+      const venue = eventUsField(after, "place");
+      const system = eventUsField(after, "event_system_type");
+      const online = system === "online" || /온라인|online/i.test(`${title} ${system}`);
+      const url = `https://event-us.kr/${subdomain}/event/${id}`;
+      const description = eventUsField(after, "description").replace(/\s+/g, " ").trim();
+      drafts.push(
+        draft({
+          title,
+          start: zoneDay(eventUsField(after, "start_date")),
+          end: zoneDay(eventUsField(after, "close_date")),
+          deadline: zoneDay(eventUsField(after, "register_due_date")),
+          deadlineKind: "registration",
+          format: online ? "online" : "offline",
+          city: online && !area ? "线上" : area || venue.slice(0, 18) || "韩国",
+          country: "韩国",
+          organizer: eventUsField(after, "app_title"),
+          prize: "",
+          summary: description.slice(0, 500),
+          url,
+          registrationUrl: url,
+          hint: `${title} ${description.slice(0, 180)}`,
+          source,
+        }),
+      );
+    }
+    return { source, drafts, upstream: drafts.length };
+  } catch (error) {
+    return empty(source, error instanceof Error ? error.message : "抓取失败");
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function pickString(item: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = item[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
-}
-
-function competitionDraft(item: Record<string, unknown>, source: string, fallbackUrl: string): EventDraft | null {
-  const title = pickString(item, ["Name", "name", "title", "raceName", "Title"]);
-  if (!title) return null;
-  const url = pickString(item, ["Url", "url", "website", "link"]) || fallbackUrl;
-  const start = pickString(item, ["StartTime", "startTime", "gmtStart", "start"]).slice(0, 10) || null;
-  const end = pickString(item, ["EndTime", "endTime", "gmtEnd", "end"]).slice(0, 10) || null;
-  return draft({
-    title,
-    start: start && start.includes("-") ? start : null,
-    end: end && end.includes("-") ? end : null,
-    deadline: end && end.includes("-") ? end : null,
-    deadlineKind: end ? "registration" : "unknown",
-    format: "online",
-    city: "线上",
-    country: "中国",
-    organizer: pickString(item, ["Organizer", "organizer", "sponsor"]) || source,
-    prize: pickString(item, ["Prize", "prize", "bonus"]),
-    summary: plainText(pickString(item, ["Description", "description", "brief"])),
-    url,
-    registrationUrl: url,
-    hint: `${pickString(item, ["Tag", "tags", "category"])} AI`,
-    source,
-  });
 }
 
 export async function pullAll(onProgress: (message: string) => void): Promise<SourcePull[]> {
@@ -533,7 +606,8 @@ export async function pullAll(onProgress: (message: string) => void): Promise<So
     { name: "DrivenData", run: pullDrivenData },
     { name: "lablab.ai", run: pullLablab },
     { name: "魔搭", run: pullModelScope },
-    { name: "天池", run: pullTianchi },
+    { name: "connpass", run: pullConnpass },
+    { name: "EventUs", run: pullEventUs },
   ];
   onProgress("正在全网搜索");
   const pulls = await Promise.all(

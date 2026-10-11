@@ -132,7 +132,7 @@ export function inferKind(draft: EventDraft, sectors: string[]): EventKind {
   if (/青少年/.test(blob) && /挑战赛|竞赛|大赛/.test(blob) && !/黑客松|hackathon/.test(blob)) {
     return "青少年学科竞赛";
   }
-  if (/黑客松|hackathon|hackfest|hack week/.test(blob)) return "黑客松";
+  if (/黑客松|hackathon|hackfest|hack week|ハッカソン|해커톤/.test(blob)) return "黑客松";
   if (sectors.includes("AI") || /创新大赛|创新挑战|challenge/.test(blob)) return "AI创新大赛";
   return "黑客松";
 }

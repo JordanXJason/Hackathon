@@ -29,6 +29,12 @@ const TIME_RANGES: TimeRange[] = ["month", "quarter", "half", "year"];
 const ALL_FORMATS: EventFormat[] = ["online", "offline", "hybrid"];
 const DEFAULT_AGES: AgeGroup[] = ["大学", "成年人", "未标明"];
 const HIDDEN_COUNTRIES = new Set(["罗马尼亚", "印度"]);
+const PAGE_SIZE = 10;
+
+function readPage(value: string | null): number {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 1 ? page : 1;
+}
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function readOne<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
@@ -73,6 +79,8 @@ export function Board({
   const countryRaw = searchParams.get("country") || "全部";
   const country = HIDDEN_COUNTRIES.has(countryRaw) ? "全部" : countryRaw;
   const openOnly = searchParams.get("open") === "1";
+  const chinaPage = readPage(searchParams.get("cp"));
+  const worldPage = readPage(searchParams.get("wp"));
   const month = /^\d{4}-\d{2}$/.test(searchParams.get("month") || "")
     ? (searchParams.get("month") as string)
     : today.slice(0, 7);
@@ -96,15 +104,19 @@ export function Board({
     };
   }, []);
 
-  function write(mutate: (params: URLSearchParams) => void) {
+  function write(mutate: (params: URLSearchParams) => void, resetPage = true) {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
+    if (resetPage) {
+      params.delete("cp");
+      params.delete("wp");
+    }
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
   const countries = useMemo(() => {
-    const names = new Set<string>(["日本", "韩国"]);
+    const names = new Set<string>();
     for (const event of events) {
       if (event.country && event.country !== "线上" && !HIDDEN_COUNTRIES.has(event.country)) names.add(event.country);
     }
@@ -141,6 +153,14 @@ export function Board({
 
   const china = visible.filter((event) => event.region === "china");
   const world = visible.filter((event) => event.region === "international");
+
+  function setListPage(key: "cp" | "wp", page: number, anchor: string) {
+    write((params) => {
+      if (page <= 1) params.delete(key);
+      else params.set(key, String(page));
+    }, false);
+    document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+  }
 
   function toggleFormat(format: EventFormat) {
     const next = formats.includes(format) ? formats.filter((item) => item !== format) : [...formats, format];
@@ -215,14 +235,14 @@ export function Board({
             <button
               type="button"
               aria-pressed={view === "list"}
-              onClick={() => write((params) => params.delete("view"))}
+              onClick={() => write((params) => params.delete("view"), false)}
             >
               清单
             </button>
             <button
               type="button"
               aria-pressed={view === "calendar"}
-              onClick={() => write((params) => params.set("view", "calendar"))}
+              onClick={() => write((params) => params.set("view", "calendar"), false)}
             >
               日历
             </button>
@@ -281,8 +301,24 @@ export function Board({
       )}
       {view === "list" ? (
         <div key={searchParams.toString()} className="list">
-          <Section title="中国区" events={china} today={today} activeSectors={sectors} />
-          <Section title="国际区" events={world} today={today} activeSectors={sectors} />
+          <Section
+            title="中国区"
+            anchor="china-list"
+            events={china}
+            page={chinaPage}
+            today={today}
+            activeSectors={sectors}
+            onPage={(next) => setListPage("cp", next, "china-list")}
+          />
+          <Section
+            title="国际区"
+            anchor="world-list"
+            events={world}
+            page={worldPage}
+            today={today}
+            activeSectors={sectors}
+            onPage={(next) => setListPage("wp", next, "world-list")}
+          />
         </div>
       ) : (
         <Calendar
@@ -294,7 +330,7 @@ export function Board({
             write((params) => {
               if (next === today.slice(0, 7)) params.delete("month");
               else params.set("month", next);
-            })
+            }, false)
           }
         />
       )}
@@ -410,28 +446,50 @@ function Filters(props: {
 
 function Section({
   title,
+  anchor,
   events,
+  page,
   today,
   activeSectors,
+  onPage,
 }: {
   title: string;
+  anchor: string;
   events: EventItem[];
+  page: number;
   today: string;
   activeSectors: string[];
+  onPage: (page: number) => void;
 }) {
+  const pages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const slice = events.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
   return (
-    <section className="section">
+    <section className="section" id={anchor}>
       <div className="section-head">
         <h2>{title}</h2>
         <span>{events.length} 场</span>
       </div>
-      {events.length === 0 ? (
+      {slice.length === 0 ? (
         <p className="empty">这个筛选下没有比赛。</p>
       ) : (
-        events.map((event) => (
+        slice.map((event) => (
           <EventRow key={event.id} event={event} today={today} activeSectors={activeSectors} />
         ))
       )}
+      {pages > 1 ? (
+        <nav className="pager" aria-label={`${title}分页`}>
+          <button type="button" disabled={current <= 1} onClick={() => onPage(current - 1)}>
+            上一页
+          </button>
+          <span>
+            {current} / {pages}
+          </span>
+          <button type="button" disabled={current >= pages} onClick={() => onPage(current + 1)}>
+            下一页
+          </button>
+        </nav>
+      ) : null}
     </section>
   );
 }

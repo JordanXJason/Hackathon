@@ -61,7 +61,13 @@ export async function translateTitles(
   for (const [title, value] of Object.entries(cache)) {
     if (value.includes("暂无")) cache[title] = glossaryZh(title);
   }
-  const pending = [...new Set(titles.filter((title) => title && !hasChinese(title) && !cache[title]))];
+  const pending = [
+    ...new Set(
+      titles.filter(
+        (title) => title && !hasChinese(title) && !/[ぁ-んァ-ン가-힣]/.test(title) && !cache[title],
+      ),
+    ),
+  ];
   let quotaHit = false;
   let cursor = 0;
   const workers = Array.from({ length: Math.min(4, pending.length) }, async () => {
