@@ -534,6 +534,38 @@ a { color: inherit; }
 
 .summary:empty { display: none; }
 
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 24px;
+  margin: 8px 0 36px;
+}
+
+.stat {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.stat b {
+  display: block;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.stat span { color: var(--muted); font-size: 0.8125rem; }
+
+.recent { margin-top: 8px; }
+
+.visit {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 0.8fr 0.8fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
@@ -576,6 +608,8 @@ a { color: inherit; }
   }
   .titles b, .titles em, .place, .tags { white-space: normal; overflow-wrap: anywhere; }
   .calendar { overflow: hidden; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit { grid-template-columns: 1fr 1fr; }
   .cal-note {
     display: block;
     margin: 0 0 10px;
