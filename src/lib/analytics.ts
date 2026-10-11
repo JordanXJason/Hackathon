@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { addDays, todayISO } from "./dates";
 
 const filePath = path.join(process.cwd(), "data", "visits.jsonl");
 const MAX_STAY_MS = 30 * 60 * 1000;
@@ -107,6 +108,36 @@ export function summarize(rows: VisitRow[]): VisitSummary {
   };
 }
 
+export type RangeId = "today" | "7" | "30" | "all" | "custom";
+
+export function isDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function shanghaiMidnight(day: string): string {
+  return new Date(`${day}T00:00:00+08:00`).toISOString();
+}
+
+export function visitWindow(id: RangeId, from?: string, to?: string): { start: string | null; end: string | null } {
+  if (id === "all") return { start: null, end: null };
+  const today = todayISO();
+  const end = shanghaiMidnight(addDays(today, 1));
+  if (id === "today") return { start: shanghaiMidnight(today), end };
+  if (id === "7") return { start: shanghaiMidnight(addDays(today, -6)), end };
+  if (id === "30") return { start: shanghaiMidnight(addDays(today, -29)), end };
+  const startDay = from && to && from > to ? to : from;
+  const endDay = from && to && from > to ? from : to;
+  if (!startDay || !endDay || !isDay(startDay) || !isDay(endDay)) return { start: shanghaiMidnight(today), end };
+  return { start: shanghaiMidnight(startDay), end: shanghaiMidnight(addDays(endDay, 1)) };
+}
+
+export function rowsInWindow(rows: VisitRow[], start: string | null, end: string | null): VisitRow[] {
+  return rows.filter((row) => (!start || row.t >= start) && (!end || row.t < end));
+}
+
 export function recentSessions(rows: VisitRow[], limit = 12): VisitSession[] {
   const grouped = new Map<string, VisitSession>();
   for (const row of rows) {
@@ -120,5 +151,8 @@ export function recentSessions(rows: VisitRow[], limit = 12): VisitSession[] {
     }
     grouped.set(row.sid, current);
   }
-  return [...grouped.values()].sort((a, b) => (a.start < b.start ? 1 : -1)).slice(0, limit);
+  return [...grouped.values()]
+    .filter((session) => session.pages > 0)
+    .sort((a, b) => (a.start < b.start ? 1 : -1))
+    .slice(0, limit);
 }

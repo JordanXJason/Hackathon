@@ -534,6 +534,55 @@ a { color: inherit; }
 
 .summary:empty { display: none; }
 
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 4px;
+}
+
+.range a {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  color: inherit;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.range a[aria-current="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.range-form {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-form input[type="date"] {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font: inherit;
+}
+
+.range-form button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
